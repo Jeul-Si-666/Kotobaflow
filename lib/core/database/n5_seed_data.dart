@@ -1,6 +1,84 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:drift/drift.dart';
+import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 import 'app_database.dart';
+
+/// Loads the N5 vocabulary from the bundled OpenJLPT SQLite database.
+Future<List<VocabulariesCompanion>> loadOpenJlptVocabularies() async {
+  final database = await _openOpenJlptDatabase();
+  try {
+    final rows = database.select(
+      "SELECT id, word, reading, romaji, meanings, level, pos, examples "
+      "FROM vocab WHERE level = 'N5' ORDER BY id",
+    );
+    return rows.map(_toVocabularyCompanion).toList();
+  } finally {
+    database.close();
+  }
+}
+
+Future<Database> _openOpenJlptDatabase() async {
+  final dbFolder = await getApplicationSupportDirectory();
+  final databaseFile = File(p.join(dbFolder.path, 'openjlpt.sqlite'));
+  final asset = await rootBundle.load('lib/core/database/openjlpt.sqlite');
+  await databaseFile.writeAsBytes(asset.buffer.asUint8List(), flush: true);
+  return sqlite3.open(databaseFile.path, mode: OpenMode.readOnly);
+}
+
+VocabulariesCompanion _toVocabularyCompanion(Row row) {
+  final word = row['word'] as String;
+  final reading = row['reading'] as String;
+  final partsOfSpeech = _decodeList(row['pos'] as String);
+  final examples = _decodeList(row['examples'] as String);
+  final firstExample = examples.isNotEmpty && examples.first is Map
+      ? examples.first as Map<String, dynamic>
+      : null;
+
+  return VocabulariesCompanion.insert(
+    id: row['id'] as String,
+    kanji: Value(word == reading ? null : word),
+    hiragana: reading,
+    romaji: Value(row['romaji'] as String),
+    meaning: _decodeList(row['meanings'] as String).join(', '),
+    wordType: _wordTypeFromPartsOfSpeech(partsOfSpeech),
+    verbGroup: Value(_verbGroupFromPartsOfSpeech(partsOfSpeech)),
+    exampleJp: Value(firstExample?['ja'] as String?),
+    exampleId: Value(firstExample?['en'] as String?),
+    jlptLevel: row['level'] as String,
+  );
+}
+
+List<dynamic> _decodeList(String value) {
+  final decoded = jsonDecode(value);
+  return decoded is List<dynamic> ? decoded : const [];
+}
+
+String _wordTypeFromPartsOfSpeech(List<dynamic> partsOfSpeech) {
+  if (partsOfSpeech.any((part) => part.toString().startsWith('v'))) {
+    return 'Verb';
+  }
+  if (partsOfSpeech.any((part) => part == 'adj-i')) return 'Adjective-i';
+  if (partsOfSpeech.any((part) => part == 'adj-na')) return 'Adjective-na';
+  if (partsOfSpeech.any((part) => part == 'adv')) return 'Adverb';
+  return 'Noun';
+}
+
+String? _verbGroupFromPartsOfSpeech(List<dynamic> partsOfSpeech) {
+  final verb = partsOfSpeech.cast<String?>().firstWhere(
+    (part) => part != null && part.startsWith('v'),
+    orElse: () => null,
+  );
+  if (verb == null) return null;
+  if (verb == 'v1') return 'Ichidan';
+  if (verb.startsWith('v5')) return 'Godan';
+  return 'Irregular';
+}
 
 /// Initial curated JLPT N5 vocabulary dataset for offline-first bootstrapping.
 ///

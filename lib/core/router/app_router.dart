@@ -6,6 +6,7 @@ import '../../features/practice/data/practice_repository.dart';
 import '../../features/practice/presentation/flashcard_screen.dart';
 import '../../features/practice/presentation/practice_screen.dart';
 import '../../features/practice/presentation/quiz_screen.dart';
+import '../../features/practice/presentation/survival_screen.dart';
 import '../../features/statistics/presentation/statistics_screen.dart';
 import '../../features/vocabulary/presentation/vocabulary_screen.dart';
 import '../../features/vocabulary/presentation/word_detail_screen.dart';
@@ -79,6 +80,10 @@ final appRouter = GoRouter(
         final count = int.tryParse(countParam ?? '5') ?? 5;
         return QuizScreen(questionCount: count);
       },
+    ),
+    GoRoute(
+      path: '/practice/survival',
+      builder: (context, state) => const SurvivalScreen(),
     ),
   ],
 );

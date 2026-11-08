@@ -80,31 +80,64 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
       await m.createAll();
+      final imported = await loadOpenJlptVocabularies();
       await batch((b) {
-        b.insertAll(vocabularies, n5SeedVocabularies);
+        b.insertAll(vocabularies, imported);
       });
+    },
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await _syncVocabularyFromOpenJlpt();
+      }
     },
     beforeOpen: (details) async {
       final existing = await select(vocabularies).get();
-      if (existing.length < n5SeedVocabularies.length) {
-        final existingIds = existing.map((v) => v.id).toSet();
-        final missing = n5SeedVocabularies
-            .where((v) => !existingIds.contains(v.id.value))
-            .toList();
-        if (missing.isNotEmpty) {
-          await batch((b) {
-            b.insertAll(vocabularies, missing);
-          });
-        }
+      if (existing.isEmpty || existing.any((v) => v.id.startsWith('n5_'))) {
+        await _syncVocabularyFromOpenJlpt();
       }
     },
   );
+
+  Future<void> _syncVocabularyFromOpenJlpt() async {
+    final imported = await loadOpenJlptVocabularies();
+    final importedByReading = {
+      for (final vocabulary in imported) vocabulary.hiragana.value: vocabulary,
+    };
+    final existing = await select(vocabularies).get();
+    final oldVocabulary = existing.where((v) => v.id.startsWith('n5_'));
+    final existingIds = existing.map((v) => v.id).toSet();
+    final missing = imported
+        .where((vocabulary) => !existingIds.contains(vocabulary.id.value))
+        .toList();
+
+    if (missing.isNotEmpty) {
+      await batch((b) => b.insertAll(vocabularies, missing));
+    }
+
+    for (final old in oldVocabulary) {
+      final replacement = importedByReading[old.hiragana];
+      if (replacement == null) continue;
+
+      await (update(learningProgresses)
+            ..where((row) => row.vocabularyId.equals(old.id)))
+          .write(LearningProgressesCompanion(vocabularyId: replacement.id));
+      await (update(quizAttempts)
+            ..where((row) => row.vocabularyId.equals(old.id)))
+          .write(QuizAttemptsCompanion(vocabularyId: replacement.id));
+      if (old.isFavorite) {
+        await (update(vocabularies)
+              ..where((row) => row.id.equals(replacement.id.value)))
+            .write(const VocabulariesCompanion(isFavorite: Value(true)));
+      }
+      await (delete(vocabularies)..where((row) => row.id.equals(old.id))).go();
+    }
+  }
 }
 
 LazyDatabase _openConnection() {
