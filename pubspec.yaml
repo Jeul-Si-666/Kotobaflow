@@ -19,6 +19,7 @@ dependencies:
 
   # Local database — Drift (typed SQLite ORM)
   drift: ^2.21.0
+  sqlite3: ^3.9.0
   sqlite3_flutter_libs: ^0.5.26
 
   # File-system path helpers (required by Drift to locate the database file)
@@ -36,3 +37,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - lib/core/database/openjlpt.sqlite
