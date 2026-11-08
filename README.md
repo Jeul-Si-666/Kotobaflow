@@ -708,5 +708,5 @@ Setelah keputusan produk dikonfirmasi:
 ## Change Log
 
   Version   Date         Changes
-  --------- ------------ -------------------
+  --------- ------------ ------------------
   1.0       2026-11-08   Initial PRD draft
